@@ -9,11 +9,14 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 import pyflux as pf
 from scipy import stats
+from arch.unitroot import ADF
+
+
 
 # FE 630 Final project
 # Group member: Minghao Kang, Yuwen Jin, Shariz Bheda
 
-preset_cov_period, preset_rho_period = 150, 90
+preset_cov_period, preset_rho_period = 90, 150
 add_back_period = max(preset_cov_period, preset_rho_period) * 1.2
 
 '# data prepare: for FF model'
@@ -36,7 +39,6 @@ daily_return = ETF_price.pct_change(1).dropna()
 total_df = daily_return
 difference = len(FF_use) - len(total_df)
 total_df['Mkt-RF'] = FF_use['Mkt-RF'].values[difference:]
-
 
 total_df['Mkt-RF'] = FF_use['Mkt-RF'].values[difference:]
 total_df['SMB'] = FF_use['SMB'].values[difference:]
@@ -235,17 +237,17 @@ class Strategy:
 			for a in temp:
 				asset.append(a)
 
-		return omega_list, asset, prices_raw['help_col_1']
+		return asset
 
 
-def maximum_10_drawdown(array):
+def maximum_10_drawdown(returns):
 	max_dd = 0
-	for i in range(len(array) - 10):
-		ten_day_array = array[i:i + 10]
-		max = np.max(ten_day_array)
-		min = np.min(ten_day_array)
-		ten_dd = (max - min) / min
-		max_dd = np.max(np.array([ten_dd, max_dd]))
+	for i in range(len(returns) - 10):
+		ten_day = returns[i:i + 10]
+		max = np.max(ten_day)
+		min = np.min(ten_day)
+		dd_10 = (max - min) / min
+		max_dd = np.max(np.array([dd_10, max_dd]))
 	return max_dd
 
 
@@ -288,14 +290,20 @@ def output_statistics(strategy, benchmark, strategy_object):
 						   max_DD, skewness, kurtosis, VaR])
 	out_df.columns = ['strategy', 'benchmark']
 	out_df.index = ['PnL', 'cumulative_return', 'average_return', 'standard_deviation',
-					  'Sharpe_ratio', 'max_DD', 'skewness', 'kurtosis', 'VaR']
+					'Sharpe_ratio', 'max_DD', 'skewness', 'kurtosis', 'VaR']
 
 	return out_df
 
 
 if __name__ == "__main__":
-	period1_start = "2009-01-01"
-	period1_end = "2020-06-20"
+	"""At the very beginning of this project, which is right after the import block,
+	   we set up look back periods for Sigma and rho ( line 16 )
+	   In the coming 3 lines, we set up the target period as well as our target beta
+	   Then run the whole script
+	   we'll get a plot together with a data frame describing portfolio's performance"""
+
+	period1_start = "2007-4-01"
+	period1_end = "2008-03-31"
 	target_beta = 1
 	test_strategy = Strategy(tickers, period1_start, period1_end)
 	test_strategy.find_para_lookback(preset_cov_period, preset_rho_period)
@@ -304,17 +312,44 @@ if __name__ == "__main__":
 	SPY_return = SPY.pct_change(1).dropna()
 	SPY_return_cum = (np.cumprod(np.array(SPY_return) + 1)) - 1
 
-	aa_omega, aaa, for_check = test_strategy.test(30, target_beta)
+	aaa = test_strategy.test(30, target_beta)
 	cum = (np.cumprod(np.array(aaa) + 1)) - 1
-	plt.plot(test_strategy.df.index[1:-2], SPY_return_cum[1:-1], color="indianred", label='Benchmark')
-	plt.plot(test_strategy.df.index, cum, color="darkseagreen", label='Strategy Performance')
+	plt.plot(test_strategy.df.index[1:], SPY_return_cum, color="indianred", label='Benchmark')
+	plt.plot(test_strategy.df.index[1:-3], cum, color="darkseagreen", label='Strategy Performance')
 	plt.legend()
 	plt.title("Target beta " + str(target_beta) + ', covariance period ' +
 			  str(preset_cov_period) + ', pho period ' + str(preset_rho_period))
 	pl = plt.gca()
-	pl.xaxis.set_major_locator(ticker.MultipleLocator(1000))
+	pl.xaxis.set_major_locator(ticker.MultipleLocator(60))
 	plt.show()
 	plt.close()
 
 	result_150_90_1_p3 = output_statistics(aaa, SPY_return, test_strategy)
 	print(output_statistics(aaa, SPY_return, test_strategy))
+
+	out_df = pd.DataFrame(data=aaa, index=test_strategy.df.index[1:-3])
+	out_df.to_csv("data/" + str(preset_cov_period) + '_' + str(preset_rho_period) +
+				  '_' + str(target_beta) + '_P1.csv')
+
+	# plt.figure()
+	# j = 1
+	# for i in ['HML', 'SMB', 'Mkt-RF']:
+	# 	plt.subplot(3, 1, j)
+	# 	plt.plot(FF_use[i], color='darkseagreen')
+	# 	plt.title(i)
+	# 	print('P_value of ADF test on ' + i + ' is '+ str(ADF(FF_use[i]).pvalue))
+	# 	j += 1
+	# plt.show()
+
+	returns = pd.read_csv("data\90_150_1_P1.csv", index_col=0)
+	plt.subplot(2, 1, 1)
+	# 	plt.plot(FF_use[i], color='darkseagreen')
+	n, bins, patches = plt.hist(SPY_return, bins=20, facecolor="lightpink",
+								edgecolor="indianred", alpha=0.7)
+	plt.title('SPY return')
+	plt.subplot(2, 1, 2)
+	plt.hist(returns, bins=20, facecolor="darkseagreen", edgecolor="darkgreen", alpha=0.7)
+	plt.title('strategy return')
+	plt.show()
+
+
